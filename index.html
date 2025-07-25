@@ -219,8 +219,6 @@
         </div>
     </div>
 
-    <!-- PPPP.mp3 は使用しないため、オーディオタグを削除します -->
-
     <script>
         // service-worker.jsを登録します
         if ('serviceWorker' in navigator) {
@@ -245,22 +243,16 @@
             const currentStageDisplay = document.getElementById('currentStage');
             const countdownDisplay = document.getElementById('countdown');
             const repetitionCountDisplay = document.getElementById('repetitionCount');
-            // PPPP.mp3 を使用しないため、bellSound の参照は削除します
-            // const bellSound = document.getElementById('bellSound');
-
-            // Tone.jsのシンセサイザーを初期化します（これのみを使用）
+            
+            // Tone.jsのシンセサイザーを初期化します
             const bellSynth = new Tone.Synth().toDestination();
-            bellSynth.envelope.attack = 0.05;
-            bellSynth.envelope.decay = 0.2;
+            bellSynth.envelope.attack = 0.02; // より短いアタック
+            bellSynth.envelope.decay = 0.1;  // 短い減衰
             bellSynth.envelope.sustain = 0.0;
-            bellSynth.envelope.release = 0.1;
+            bellSynth.envelope.release = 0.05; // 非常に短いリリース
 
-            // PPPP.mp3 の読み込み関連のロジックはすべて削除します
-            // let useExternalAudio = false;
-            // bellSound.addEventListener('canplaythrough', () => { /* ... */ });
-            // bellSound.addEventListener('error', (e) => { /* ... */ });
-            // bellSound.volume = 1;
-            // bellSound.muted = false;
+            // ウェイクロックの管理変数
+            let wakeLock = null;
 
             let timerInterval;
             let totalSeconds;
@@ -270,23 +262,56 @@
             let maxRepetitions = 0;
             let isResting = false; // trueなら休憩時間, falseならアクティブ時間
 
+            // ウェイクロックを要求する関数
+            async function requestWakeLock() {
+                if ('wakeLock' in navigator) {
+                    try {
+                        wakeLock = await navigator.wakeLock.request('screen');
+                        console.log('Wake Lock requested!');
+                        wakeLock.addEventListener('release', () => {
+                            console.log('Wake Lock was released');
+                        });
+                    } catch (err) {
+                        console.error(`Wake Lock request failed: ${err.name}, ${err.message}`);
+                    }
+                } else {
+                    console.warn('Wake Lock API is not supported in this browser.');
+                }
+            }
+
+            // ウェイクロックを解放する関数
+            function releaseWakeLock() {
+                if (wakeLock) {
+                    wakeLock.release();
+                    wakeLock = null;
+                    console.log('Wake Lock released.');
+                }
+            }
+
             function formatTime(seconds) {
                 const minutes = Math.floor(seconds / 60);
                 const remainingSeconds = seconds % 60;
                 return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
             }
 
-            // 音を鳴らす関数（Tone.jsのみを使用し、音を変更）
+            // 音を鳴らす関数（「ピピピ」音に変更）
             function playBellSound() {
-                // C5とG5の2つの音を短い間隔で鳴らして、ベルのような効果を出します
-                bellSynth.triggerAttackRelease("C5", "16n"); // 最初の音 (短く)
-                setTimeout(() => { // 150ミリ秒後に2番目の音を鳴らす
-                    bellSynth.triggerAttackRelease("G5", "16n"); // 2番目の音 (短く)
-                }, 150);
+                let count = 0;
+                const note = "D6"; // 高い音
+                const duration = "64n"; // 非常に短い音符
+                const delay = 100; // 各音の間の遅延（ミリ秒）
+
+                const intervalId = setInterval(() => {
+                    if (count < 3) { // 3回鳴らす
+                        bellSynth.triggerAttackRelease(note, duration);
+                        count++;
+                    } else {
+                        clearInterval(intervalId); // 3回鳴らしたら停止
+                    }
+                }, delay);
             }
 
             function updateDisplay() {
-                // コンソールログを追加して、表示内容の変化を追跡
                 console.log(`UpdateDisplay: isPrepping=${isPrepping}, isResting=${isResting}, totalSeconds=${totalSeconds}`);
 
                 if (isPrepping) {
@@ -312,137 +337,4 @@
                 }
             }
 
-            function startTimer() {
-                console.log("startTimer関数が呼び出されました。");
-                // 既存のタイマーがあればクリアして、二重起動を防ぐ
-                clearInterval(timerInterval); 
-
-                if (!isPaused) {
-                    const activeTime = parseInt(activeMinutesInput.value) * 60 + parseInt(activeSecondsInput.value);
-                    const restTime = parseInt(restMinutesInput.value) * 60 + parseInt(restSecondsInput.value);
-                    maxRepetitions = parseInt(repetitionsInput.value);
-
-                    if (activeTime <= 0 && restTime <= 0) {
-                        console.error('アクティブ時間または休憩時間を設定してください。');
-                        return;
-                    }
-                    if (maxRepetitions <= 0) {
-                        console.error('繰り返し回数は1回以上に設定してください。');
-                        return;
-                    }
-
-                    // 準備期間の開始
-                    isPrepping = true;
-                    totalSeconds = 5; // 5秒の準備期間
-                    updateDisplay(); // ここで「まもなく開始します」と「00:05」が表示されるはず
-                    console.log(`準備期間を開始: totalSeconds=${totalSeconds}, isPrepping=${isPrepping}`);
-                }
-
-                startButton.disabled = true;
-                pauseButton.disabled = false;
-                resetButton.disabled = false;
-
-                activeMinutesInput.disabled = true;
-                activeSecondsInput.disabled = true;
-                restMinutesInput.disabled = true;
-                restSecondsInput.disabled = true;
-                repetitionsInput.disabled = true;
-
-                timerInterval = setInterval(() => {
-                    totalSeconds--;
-                    updateDisplay(); // 毎秒表示を更新
-
-                    if (totalSeconds <= 0) {
-                        playBellSound(); // 0になったらベルを鳴らす
-                        if (isPrepping) {
-                            console.log("準備期間が終了しました。アクティブ時間へ移行します。");
-                            isPrepping = false; // 準備期間終了
-                            currentRepetition = 1; // 1回目の繰り返しを開始
-                            isResting = false; // アクティブ時間
-                            totalSeconds = parseInt(activeMinutesInput.value) * 60 + parseInt(activeSecondsInput.value); // アクティブ時間に設定
-                            updateDisplay(); // アクティブ時間の表示を更新
-                        } else if (isResting) {
-                            // 休憩時間終了
-                            currentRepetition++;
-                            if (currentRepetition <= maxRepetitions) {
-                                isResting = false;
-                                totalSeconds = parseInt(activeMinutesInput.value) * 60 + parseInt(activeSecondsInput.value);
-                            } else {
-                                // 全ての繰り返しが終了
-                                clearInterval(timerInterval);
-                                countdownDisplay.textContent = "完了！";
-                                currentStageDisplay.textContent = "お疲れ様でした！";
-                                startButton.disabled = false;
-                                pauseButton.disabled = true;
-                                resetButton.disabled = false;
-                                isPaused = false;
-                                activeMinutesInput.disabled = false;
-                                activeSecondsInput.disabled = false;
-                                restMinutesInput.disabled = false;
-                                restSecondsInput.disabled = false;
-                                repetitionsInput.disabled = false;
-                                return;
-                            }
-                        } else {
-                            // アクティブ時間終了
-                            isResting = true;
-                            totalSeconds = parseInt(restMinutesInput.value) * 60 + parseInt(restSecondsInput.value);
-                        }
-                    }
-                }, 1000);
-            }
-
-            function pauseTimer() {
-                console.log("pauseTimer関数が呼び出されました。");
-                clearInterval(timerInterval);
-                isPaused = true;
-                startButton.disabled = false;
-                pauseButton.disabled = true;
-                currentStageDisplay.textContent = '一時停止中';
-                currentStageDisplay.style.color = '#888';
-            }
-
-            function resetTimer() {
-                console.log("resetTimer関数が呼び出されました。");
-                clearInterval(timerInterval);
-                isPaused = false;
-                isPrepping = false; // リセット時に準備期間フラグもリセット
-                totalSeconds = 0;
-                currentRepetition = 0;
-                maxRepetitions = 0;
-                isResting = false;
-
-                countdownDisplay.textContent = "00:00";
-                currentStageDisplay.textContent = "待機中...";
-                repetitionCountDisplay.textContent = "残り 0/0 回";
-                countdownDisplay.style.color = '#e74c3c';
-
-                startButton.disabled = false;
-                pauseButton.disabled = true;
-                resetButton.disabled = false;
-
-                activeMinutesInput.disabled = false;
-                activeSecondsInput.disabled = false;
-                restMinutesInput.disabled = false;
-                restSecondsInput.disabled = false;
-                repetitionsInput.disabled = false;
-            }
-
-            startButton.addEventListener('click', async () => {
-                console.log("スタートボタンがクリックされました。");
-                // Tone.jsのオーディオコンテキストを開始します。
-                // これにより、iOSを含むブラウザで音が再生できるようになります。
-                await Tone.start();
-                console.log("Tone.jsオーディオコンテキストが開始されました。");
-                startTimer(); // タイマーを開始
-            });
-
-            pauseButton.addEventListener('click', pauseTimer);
-            resetButton.addEventListener('click', resetTimer);
-
-            // ページロード時の初期設定
-            resetTimer();
-        });
-    </script>
-</body>
-</html>
+            function st
