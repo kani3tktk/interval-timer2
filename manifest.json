@@ -1,6 +1,6 @@
 {
   "name": "インターバルタイマー",
-  "short_name": "タイマー",
+  "short_name": "インターバルタイマー",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
