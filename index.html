@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>インターバルタイマー</title>
     <meta name="theme-color" content="#ffffff">
+    <!-- PWA用のmanifest.jsonをリンクします -->
+    <link rel="manifest" href="manifest.json">
     <!-- Tone.js ライブラリを読み込みます。 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
@@ -217,10 +219,18 @@
         </div>
     </div>
 
-    <!-- PPPP.mp3 が存在する場合に備えて、オーディオタグを再導入します。 -->
-    <audio id="bellSound" src="PPPP.mp3"></audio>
+    <!-- PPPP.mp3 は使用しないため、オーディオタグを削除します -->
 
     <script>
+        // service-worker.jsを登録します
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('Service worker registered.', reg))
+                    .catch(err => console.error('Service worker registration failed:', err));
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const activeMinutesInput = document.getElementById('activeMinutes');
             const activeSecondsInput = document.getElementById('activeSeconds');
@@ -235,33 +245,22 @@
             const currentStageDisplay = document.getElementById('currentStage');
             const countdownDisplay = document.getElementById('countdown');
             const repetitionCountDisplay = document.getElementById('repetitionCount');
-            const bellSound = document.getElementById('bellSound');
+            // PPPP.mp3 を使用しないため、bellSound の参照は削除します
+            // const bellSound = document.getElementById('bellSound');
 
-            // PPPP.mp3 の読み込みに成功したかどうかを判定するフラグ
-            let useExternalAudio = false;
-
-            // Tone.jsのシンセサイザーを初期化します（外部ファイルが使えない場合のフォールバック）
+            // Tone.jsのシンセサイザーを初期化します（これのみを使用）
             const bellSynth = new Tone.Synth().toDestination();
             bellSynth.envelope.attack = 0.05;
             bellSynth.envelope.decay = 0.2;
             bellSynth.envelope.sustain = 0.0;
             bellSynth.envelope.release = 0.1;
 
-            // PPPP.mp3 の読み込みを試行し、成功したかどうかのフラグをセット
-            bellSound.addEventListener('canplaythrough', () => {
-                useExternalAudio = true;
-                console.log("PPPP.mp3の読み込みに成功しました。こちらの音を優先して使用します。");
-            });
-
-            // 読み込みに失敗した場合
-            bellSound.addEventListener('error', (e) => {
-                useExternalAudio = false;
-                console.warn("PPPP.mp3の読み込みに失敗しました。Tone.jsの音をフォールバックとして使用します。", e);
-            });
-            
-            // 音量設定
-            bellSound.volume = 1;
-            bellSound.muted = false;
+            // PPPP.mp3 の読み込み関連のロジックはすべて削除します
+            // let useExternalAudio = false;
+            // bellSound.addEventListener('canplaythrough', () => { /* ... */ });
+            // bellSound.addEventListener('error', (e) => { /* ... */ });
+            // bellSound.volume = 1;
+            // bellSound.muted = false;
 
             let timerInterval;
             let totalSeconds;
@@ -277,15 +276,13 @@
                 return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
             }
 
-            // 音を鳴らす関数（外部ファイルがあれば優先）
+            // 音を鳴らす関数（Tone.jsのみを使用し、音を変更）
             function playBellSound() {
-                if (useExternalAudio) {
-                    bellSound.currentTime = 0;
-                    // iOSのオーディオポリシーに対応するため、ユーザー操作内でplayを試みます
-                    bellSound.play().catch(e => console.error("Failed to play external sound:", e));
-                } else {
-                    bellSynth.triggerAttackRelease("C5", "8n");
-                }
+                // C5とG5の2つの音を短い間隔で鳴らして、ベルのような効果を出します
+                bellSynth.triggerAttackRelease("C5", "16n"); // 最初の音 (短く)
+                setTimeout(() => { // 150ミリ秒後に2番目の音を鳴らす
+                    bellSynth.triggerAttackRelease("G5", "16n"); // 2番目の音 (短く)
+                }, 150);
             }
 
             function updateDisplay() {
@@ -293,7 +290,6 @@
                 console.log(`UpdateDisplay: isPrepping=${isPrepping}, isResting=${isResting}, totalSeconds=${totalSeconds}`);
 
                 if (isPrepping) {
-                    // ここを「まもなく開始します」に変更
                     currentStageDisplay.textContent = 'まもなく開始します';
                     currentStageDisplay.style.color = '#2980b9'; // 青色
                 } else if (isResting) {
