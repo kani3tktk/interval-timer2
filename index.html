@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>インターバルタイマー</title>
     <meta name="theme-color" content="#ffffff">
-    <!-- Tone.js ライブラリを読み込みます。これにより、JavaScriptで音を生成できます。 -->
+    <!-- Tone.js ライブラリを読み込みます。 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
         body {
@@ -127,16 +127,16 @@
             }
 
             .setting-item {
-                flex-wrap: nowrap; /* 強制的に改行しない */
-                justify-content: center; /* 中央寄せを維持 */
-                padding: 5px 0; /* 必要に応じてパディングを調整 */
+                flex-wrap: nowrap;
+                justify-content: center;
+                padding: 5px 0;
             }
 
             .setting-item label {
-                text-align: right; /* ラベルを右寄せに保つ */
-                margin-bottom: 0; /* 不要なマージンを削除 */
-                flex-basis: auto; /* 自動調整に戻すか、適切な固定値を設定 */
-                min-width: 70px; /* ラベルの最小幅を設定し、はみ出しを防ぐ */
+                text-align: right;
+                margin-bottom: 0;
+                flex-basis: auto;
+                min-width: 70px;
             }
 
             .countdown-text {
@@ -217,7 +217,8 @@
         </div>
     </div>
 
-    <!-- PPPP.mp3 のオーディオタグは削除しました。代わりにTone.jsを使用します。 -->
+    <!-- PPPP.mp3 が存在する場合に備えて、オーディオタグを再導入します。 -->
+    <audio id="bellSound" src="PPPP.mp3"></audio>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -234,19 +235,38 @@
             const currentStageDisplay = document.getElementById('currentStage');
             const countdownDisplay = document.getElementById('countdown');
             const repetitionCountDisplay = document.getElementById('repetitionCount');
-            
-            // Tone.jsのシンセサイザーを初期化します。
-            // これが音を生成するオブジェクトになります。
+            const bellSound = document.getElementById('bellSound');
+
+            // PPPP.mp3 の読み込みに成功したかどうかを判定するフラグ
+            let useExternalAudio = false;
+
+            // Tone.jsのシンセサイザーを初期化します（外部ファイルが使えない場合のフォールバック）
             const bellSynth = new Tone.Synth().toDestination();
-            // 音のエンベロープ（時間による音量変化）を設定して、ベルのような短い音にします。
             bellSynth.envelope.attack = 0.05;
             bellSynth.envelope.decay = 0.2;
             bellSynth.envelope.sustain = 0.0;
             bellSynth.envelope.release = 0.1;
 
+            // PPPP.mp3 の読み込みを試行し、成功したかどうかのフラグをセット
+            bellSound.addEventListener('canplaythrough', () => {
+                useExternalAudio = true;
+                console.log("PPPP.mp3の読み込みに成功しました。こちらの音を優先して使用します。");
+            });
+
+            // 読み込みに失敗した場合
+            bellSound.addEventListener('error', (e) => {
+                useExternalAudio = false;
+                console.warn("PPPP.mp3の読み込みに失敗しました。Tone.jsの音をフォールバックとして使用します。", e);
+            });
+            
+            // 音量設定
+            bellSound.volume = 1;
+            bellSound.muted = false;
+
             let timerInterval;
             let totalSeconds;
             let isPaused = false;
+            let isPrepping = false; // 準備期間中かどうかを示すフラグ
             let currentRepetition = 0;
             let maxRepetitions = 0;
             let isResting = false; // trueなら休憩時間, falseならアクティブ時間
@@ -257,23 +277,35 @@
                 return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
             }
 
-            // Tone.jsでベル音を再生する関数
+            // 音を鳴らす関数（外部ファイルがあれば優先）
             function playBellSound() {
-                // "C5"は音の高さ（中央ドの1オクターブ上）、「8n」は音の長さ（8分音符）です。
-                bellSynth.triggerAttackRelease("C5", "8n");
+                if (useExternalAudio) {
+                    bellSound.currentTime = 0;
+                    // iOSのオーディオポリシーに対応するため、ユーザー操作内でplayを試みます
+                    bellSound.play().catch(e => console.error("Failed to play external sound:", e));
+                } else {
+                    bellSynth.triggerAttackRelease("C5", "8n");
+                }
             }
 
             function updateDisplay() {
-                countdownDisplay.textContent = formatTime(totalSeconds);
-                repetitionCountDisplay.textContent = `残り ${currentRepetition}/${maxRepetitions} 回`;
+                // コンソールログを追加して、表示内容の変化を追跡
+                console.log(`UpdateDisplay: isPrepping=${isPrepping}, isResting=${isResting}, totalSeconds=${totalSeconds}`);
 
-                if (isResting) {
+                if (isPrepping) {
+                    // ここを「まもなく開始します」に変更
+                    currentStageDisplay.textContent = 'まもなく開始します';
+                    currentStageDisplay.style.color = '#2980b9'; // 青色
+                } else if (isResting) {
                     currentStageDisplay.textContent = '休憩';
                     currentStageDisplay.style.color = '#27ae60'; // 緑色
                 } else {
                     currentStageDisplay.textContent = 'アクティブ';
                     currentStageDisplay.style.color = '#e74c3c'; // 赤色
                 }
+
+                countdownDisplay.textContent = formatTime(totalSeconds);
+                repetitionCountDisplay.textContent = `残り ${currentRepetition}/${maxRepetitions} 回`;
 
                 if (totalSeconds <= 5 && totalSeconds > 0) {
                     countdownDisplay.style.color = '#f39c12'; // オレンジ色（残り少ない時に）
@@ -285,7 +317,11 @@
             }
 
             function startTimer() {
-                if (!isPaused) { // ポーズからの再開でなければ、初期設定を読み込む
+                console.log("startTimer関数が呼び出されました。");
+                // 既存のタイマーがあればクリアして、二重起動を防ぐ
+                clearInterval(timerInterval); 
+
+                if (!isPaused) {
                     const activeTime = parseInt(activeMinutesInput.value) * 60 + parseInt(activeSecondsInput.value);
                     const restTime = parseInt(restMinutesInput.value) * 60 + parseInt(restSecondsInput.value);
                     maxRepetitions = parseInt(repetitionsInput.value);
@@ -299,17 +335,17 @@
                         return;
                     }
 
-                    currentRepetition = 1;
-                    isResting = false;
-                    totalSeconds = activeTime;
-                    updateDisplay(); // 初期表示
+                    // 準備期間の開始
+                    isPrepping = true;
+                    totalSeconds = 5; // 5秒の準備期間
+                    updateDisplay(); // ここで「まもなく開始します」と「00:05」が表示されるはず
+                    console.log(`準備期間を開始: totalSeconds=${totalSeconds}, isPrepping=${isPrepping}`);
                 }
 
                 startButton.disabled = true;
                 pauseButton.disabled = false;
                 resetButton.disabled = false;
 
-                // 設定入力欄を無効化
                 activeMinutesInput.disabled = true;
                 activeSecondsInput.disabled = true;
                 restMinutesInput.disabled = true;
@@ -318,11 +354,18 @@
 
                 timerInterval = setInterval(() => {
                     totalSeconds--;
-                    updateDisplay();
+                    updateDisplay(); // 毎秒表示を更新
 
                     if (totalSeconds <= 0) {
-                        playBellSound();
-                        if (isResting) {
+                        playBellSound(); // 0になったらベルを鳴らす
+                        if (isPrepping) {
+                            console.log("準備期間が終了しました。アクティブ時間へ移行します。");
+                            isPrepping = false; // 準備期間終了
+                            currentRepetition = 1; // 1回目の繰り返しを開始
+                            isResting = false; // アクティブ時間
+                            totalSeconds = parseInt(activeMinutesInput.value) * 60 + parseInt(activeSecondsInput.value); // アクティブ時間に設定
+                            updateDisplay(); // アクティブ時間の表示を更新
+                        } else if (isResting) {
                             // 休憩時間終了
                             currentRepetition++;
                             if (currentRepetition <= maxRepetitions) {
@@ -336,8 +379,7 @@
                                 startButton.disabled = false;
                                 pauseButton.disabled = true;
                                 resetButton.disabled = false;
-                                isPaused = false; // 状態をリセット
-                                // 設定入力欄を有効化
+                                isPaused = false;
                                 activeMinutesInput.disabled = false;
                                 activeSecondsInput.disabled = false;
                                 restMinutesInput.disabled = false;
@@ -355,6 +397,7 @@
             }
 
             function pauseTimer() {
+                console.log("pauseTimer関数が呼び出されました。");
                 clearInterval(timerInterval);
                 isPaused = true;
                 startButton.disabled = false;
@@ -364,8 +407,10 @@
             }
 
             function resetTimer() {
+                console.log("resetTimer関数が呼び出されました。");
                 clearInterval(timerInterval);
                 isPaused = false;
+                isPrepping = false; // リセット時に準備期間フラグもリセット
                 totalSeconds = 0;
                 currentRepetition = 0;
                 maxRepetitions = 0;
@@ -374,13 +419,12 @@
                 countdownDisplay.textContent = "00:00";
                 currentStageDisplay.textContent = "待機中...";
                 repetitionCountDisplay.textContent = "残り 0/0 回";
-                countdownDisplay.style.color = '#e74c3c'; // デフォルトの色に戻す
+                countdownDisplay.style.color = '#e74c3c';
 
                 startButton.disabled = false;
                 pauseButton.disabled = true;
-                resetButton.disabled = false; // リセットボタンは常に押せるようにする
+                resetButton.disabled = false;
 
-                // 設定入力欄を有効化
                 activeMinutesInput.disabled = false;
                 activeSecondsInput.disabled = false;
                 restMinutesInput.disabled = false;
@@ -388,19 +432,20 @@
                 repetitionsInput.disabled = false;
             }
 
-            // スタートボタンのイベントリスナーを修正
             startButton.addEventListener('click', async () => {
+                console.log("スタートボタンがクリックされました。");
                 // Tone.jsのオーディオコンテキストを開始します。
                 // これにより、iOSを含むブラウザで音が再生できるようになります。
                 await Tone.start();
+                console.log("Tone.jsオーディオコンテキストが開始されました。");
                 startTimer(); // タイマーを開始
             });
 
             pauseButton.addEventListener('click', pauseTimer);
             resetButton.addEventListener('click', resetTimer);
 
-            // 初期表示設定
-            resetTimer(); // ページロード時に初期状態にする
+            // ページロード時の初期設定
+            resetTimer();
         });
     </script>
 </body>
