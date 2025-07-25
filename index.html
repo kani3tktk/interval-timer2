@@ -4,20 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>インターバルタイマー</title>
-    <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#ffffff">
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js')
-                    .then(reg => console.log('Service worker registered.', reg))
-                    .catch(err => console.error('Service worker registration failed:', err));
-            });
-        }
-    </script>
+    <!-- Tone.js ライブラリを読み込みます。これにより、JavaScriptで音を生成できます。 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
-        /* ...CSS全体... */
-                body {
+        body {
             font-family: 'Arial', sans-serif;
             display: flex;
             justify-content: center;
@@ -57,7 +48,6 @@
             align-items: center;
             justify-content: center;
             gap: 10px;
-            flex-wrap: wrap; /* 小さい画面での折り返し */
         }
 
         .setting-item label {
@@ -65,10 +55,11 @@
             color: #555;
             flex-basis: 100px; /* ラベルの幅を固定 */
             text-align: right;
+            white-space: nowrap; /* ラベルの改行を防ぐ */
         }
 
-        .setting-item input[type="number"] {
-            width: 60px;
+        .setting-item input[type="number"],
+        .setting-item select { /* select要素も対象に追加 */
             padding: 8px;
             border: 1px solid #ccc;
             border-radius: 5px;
@@ -96,7 +87,7 @@
             font-weight: bold;
             color: #e74c3c;
             margin-bottom: 10px;
-            font-family: 'Roboto Mono', monospace; /* 等幅フォントで見た目を揃える */
+            font-family: 'Roboto Mono', monospace;
         }
 
         .repetition-text {
@@ -136,14 +127,16 @@
             }
 
             .setting-item {
-                flex-direction: column;
-                align-items: flex-start;
+                flex-wrap: nowrap; /* 強制的に改行しない */
+                justify-content: center; /* 中央寄せを維持 */
+                padding: 5px 0; /* 必要に応じてパディングを調整 */
             }
 
             .setting-item label {
-                text-align: left;
-                margin-bottom: 5px;
-                flex-basis: auto;
+                text-align: right; /* ラベルを右寄せに保つ */
+                margin-bottom: 0; /* 不要なマージンを削除 */
+                flex-basis: auto; /* 自動調整に戻すか、適切な固定値を設定 */
+                min-width: 70px; /* ラベルの最小幅を設定し、はみ出しを防ぐ */
             }
 
             .countdown-text {
@@ -157,7 +150,6 @@
                 width: 100%;
             }
         }
-        /* ...CSS全体End... */
     </style>
 
 </head>
@@ -167,18 +159,48 @@
 
         <div class="settings">
             <div class="setting-item">
-                <label for="activeMinutes">アクティブ時間:</label>
-                <input type="number" id="activeMinutes" value="3" min="0"> 分
-                <input type="number" id="activeSeconds" value="0" min="0" max="59"> 秒
+                <label for="activeMinutes">アクティブ時間:</label><br>
+                <select id="activeMinutes">
+                    <script>
+                        [0, 1, 2, 3, 5, 10, 15, 20, 30].forEach(i => {
+                            document.write(`<option value="${i}" ${i===3 ? 'selected' : ''}>${i}分</option>`);
+                        });
+                    </script>
+                </select>
+                <select id="activeSeconds">
+                    <script>
+                        [0, 5, 10, 15, 20, 25, 30, 45, 59].forEach(i => {
+                            document.write(`<option value="${i}" ${i===0 ? 'selected' : ''}>${i}秒</option>`);
+                        });
+                    </script>
+                </select>
             </div>
             <div class="setting-item">
                 <label for="restMinutes">休憩時間:</label>
-                <input type="number" id="restMinutes" value="0" min="0"> 分
-                <input type="number" id="restSeconds" value="30" min="0" max="59"> 秒
+                <select id="restMinutes">
+                    <script>
+                        [0, 1, 2, 3, 5, 10, 15, 20, 30].forEach(i => {
+                            document.write(`<option value="${i}" ${i===0 ? 'selected' : ''}>${i}分</option>`);
+                        });
+                    </script>
+                </select>
+                <select id="restSeconds">
+                    <script>
+                        [0, 5, 10, 15, 20, 25, 30, 45, 59].forEach(i => {
+                            document.write(`<option value="${i}" ${i===30 ? 'selected' : ''}>${i}秒</option>`);
+                        });
+                    </script>
+                </select>
             </div>
             <div class="setting-item">
                 <label for="repetitions">繰り返し回数:</label>
-                <input type="number" id="repetitions" value="50" min="1"> 回
+                <select id="repetitions">
+                    <script>
+                        [3, 5, 10, 15, 20, 25, 30, 40, 50, 100].forEach(i => {
+                            document.write(`<option value="${i}" ${i===50 ? 'selected' : ''}>${i}回</option>`);
+                        });
+                    </script>
+                </select>
             </div>
         </div>
 
@@ -195,12 +217,7 @@
         </div>
     </div>
 
-   <audio id="bellSound" src="PPPP.mp3"></audio>
-
-    
-
-</body>
-</html>
+    <!-- PPPP.mp3 のオーディオタグは削除しました。代わりにTone.jsを使用します。 -->
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -217,9 +234,15 @@
             const currentStageDisplay = document.getElementById('currentStage');
             const countdownDisplay = document.getElementById('countdown');
             const repetitionCountDisplay = document.getElementById('repetitionCount');
-            const bellSound = document.getElementById('bellSound');
-            bellSound.volume = 1;
-            bellSound.muted = false;
+            
+            // Tone.jsのシンセサイザーを初期化します。
+            // これが音を生成するオブジェクトになります。
+            const bellSynth = new Tone.Synth().toDestination();
+            // 音のエンベロープ（時間による音量変化）を設定して、ベルのような短い音にします。
+            bellSynth.envelope.attack = 0.05;
+            bellSynth.envelope.decay = 0.2;
+            bellSynth.envelope.sustain = 0.0;
+            bellSynth.envelope.release = 0.1;
 
             let timerInterval;
             let totalSeconds;
@@ -234,9 +257,10 @@
                 return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
             }
 
+            // Tone.jsでベル音を再生する関数
             function playBellSound() {
-                bellSound.currentTime = 0; // 再生位置を最初に戻す
-                bellSound.play().catch(e => console.error("Failed to play sound:", e));
+                // "C5"は音の高さ（中央ドの1オクターブ上）、「8n」は音の長さ（8分音符）です。
+                bellSynth.triggerAttackRelease("C5", "8n");
             }
 
             function updateDisplay() {
@@ -261,18 +285,17 @@
             }
 
             function startTimer() {
-                // playBellSound();
                 if (!isPaused) { // ポーズからの再開でなければ、初期設定を読み込む
                     const activeTime = parseInt(activeMinutesInput.value) * 60 + parseInt(activeSecondsInput.value);
                     const restTime = parseInt(restMinutesInput.value) * 60 + parseInt(restSecondsInput.value);
                     maxRepetitions = parseInt(repetitionsInput.value);
 
                     if (activeTime <= 0 && restTime <= 0) {
-                        alert('アクティブ時間または休憩時間を設定してください。');
+                        console.error('アクティブ時間または休憩時間を設定してください。');
                         return;
                     }
                     if (maxRepetitions <= 0) {
-                        alert('繰り返し回数は1回以上に設定してください。');
+                        console.error('繰り返し回数は1回以上に設定してください。');
                         return;
                     }
 
@@ -292,7 +315,6 @@
                 restMinutesInput.disabled = true;
                 restSecondsInput.disabled = true;
                 repetitionsInput.disabled = true;
-
 
                 timerInterval = setInterval(() => {
                     totalSeconds--;
@@ -356,7 +378,7 @@
 
                 startButton.disabled = false;
                 pauseButton.disabled = true;
-                resetButton.disabled = false; // リセットボタンは常に押せるようにする、もしくは無効化
+                resetButton.disabled = false; // リセットボタンは常に押せるようにする
 
                 // 設定入力欄を有効化
                 activeMinutesInput.disabled = false;
@@ -366,7 +388,14 @@
                 repetitionsInput.disabled = false;
             }
 
-            startButton.addEventListener('click', startTimer);
+            // スタートボタンのイベントリスナーを修正
+            startButton.addEventListener('click', async () => {
+                // Tone.jsのオーディオコンテキストを開始します。
+                // これにより、iOSを含むブラウザで音が再生できるようになります。
+                await Tone.start();
+                startTimer(); // タイマーを開始
+            });
+
             pauseButton.addEventListener('click', pauseTimer);
             resetButton.addEventListener('click', resetTimer);
 
